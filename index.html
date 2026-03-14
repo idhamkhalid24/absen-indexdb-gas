@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rocky Hijab • Cloud Sync System</title>
+    <title>Rocky Hijab • Cloud Sync (IndexedDB + GAS)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -52,9 +52,6 @@
             background: linear-gradient(135deg, #f97316, #dc2626);
             animation: pulse 2s infinite;
         }
-        .cloud-badge {
-            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-        }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
@@ -75,6 +72,18 @@
         .bg-pattern {
             background-image: radial-gradient(circle at 10px 10px, rgba(99, 102, 241, 0.05) 2px, transparent 2px);
             background-size: 30px 30px;
+        }
+        input[type="password"] {
+            -webkit-text-security: disc;
+            autocomplete: off;
+        }
+        input[type="password"]:-webkit-autofill,
+        input[type="password"]:-webkit-autofill:hover,
+        input[type="password"]:-webkit-autofill:focus,
+        input[type="password"]:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px #f8fafc inset !important;
+            -webkit-text-fill-color: #1e293b !important;
+            transition: background-color 5000s ease-in-out 0s;
         }
         .loading-overlay {
             position: fixed;
@@ -101,25 +110,18 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .sync-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 4px;
+        .trial-menu-badge {
+            background: linear-gradient(135deg, #f97316, #dc2626);
         }
-        .sync-active {
-            background-color: #10b981;
-            animation: pulse 1.5s infinite;
+        .cloud-badge {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
         }
-        .sync-pending {
-            background-color: #f59e0b;
+        .sync-badge {
+            background: linear-gradient(135deg, #10b981, #059669);
+            animation: pulse 2s infinite;
         }
-        .sync-error {
-            background-color: #ef4444;
-        }
-        .sync-idle {
-            background-color: #94a3b8;
+        .offline-badge {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
         }
     </style>
 </head>
@@ -133,10 +135,13 @@
         </div>
     </div>
 
-    <!-- Sync Status Toast -->
-    <div id="sync-toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 bg-indigo-600/90 backdrop-blur-sm text-white text-[8px] font-bold rounded-full shadow-2xl opacity-0 transition-all z-[101] border border-white/20 flex items-center gap-2">
-        <span class="sync-indicator sync-active"></span>
-        <span id="sync-status-text">Menyinkronkan...</span>
+    <!-- Sync Overlay -->
+    <div id="sync-overlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-[100]">
+        <div class="bg-white rounded-3xl p-8 text-center max-w-sm">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-sm font-bold text-indigo-600" id="sync-status">Menyinkronkan dengan cloud...</p>
+            <p class="text-[10px] text-slate-500 mt-2" id="sync-detail">0/0 data</p>
+        </div>
     </div>
 
     <div class="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative custom-shadow border border-white/20" style="max-height: 95vh;">
@@ -158,10 +163,16 @@
             </div>
             <div class="flex gap-2">
                 <div id="trial-badge" class="hidden trial-badge text-white text-[9px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
-                    <span class="animate-spin">🔄</span> TRIAL MODE
+                    <span class="animate-spin">🔄</span> TRIAL
                 </div>
                 <div id="cloud-badge" class="hidden cloud-badge text-white text-[9px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
                     <span>☁️</span> CLOUD
+                </div>
+                <div id="sync-badge" class="hidden sync-badge text-white text-[9px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                    <span class="animate-spin">🔄</span> SYNC
+                </div>
+                <div id="offline-badge" class="hidden offline-badge text-white text-[9px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                    <span>📴</span> OFFLINE
                 </div>
                 <button onclick="openMenuModal()" class="p-2.5 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all border border-white/30 shadow-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -500,42 +511,28 @@
                 </div>
             </div>
             
-            <!-- STATUS SINKRONISASI CLOUD -->
+            <!-- STATUS KONEKSI CLOUD -->
             <div class="mb-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl" id="cloud-status-container">
                 <p class="text-[9px] font-bold text-blue-700 mb-2 flex items-center gap-1">
-                    <span>☁️</span> STATUS SINKRONISASI
+                    <span>☁️</span> STATUS CLOUD
                 </p>
                 <div class="space-y-1 text-[8px]">
                     <div class="flex justify-between items-center">
                         <span>Koneksi:</span>
-                        <span id="cloud-connection-status" class="font-bold text-green-600 flex items-center gap-1">
-                            <span class="sync-indicator sync-active"></span> Online
-                        </span>
+                        <span id="cloud-connection-status" class="font-bold text-green-600">● Online</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Data tersimpan:</span>
+                        <span id="cloud-last-sync" class="font-bold">-</span>
                     </div>
                     <div class="flex justify-between">
                         <span>Antrian sync:</span>
-                        <span id="sync-queue-count" class="font-bold">0</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Terakhir sync:</span>
-                        <span id="cloud-last-sync" class="font-bold">-</span>
+                        <span id="sync-queue" class="font-bold text-orange-600">0</span>
                     </div>
                 </div>
             </div>
             
             <div class="space-y-3 mb-6 max-h-60 overflow-y-auto hide-scroll">
-                <!-- TOMBOL SYNC MANUAL -->
-                <button onclick="manualSync()" class="w-full p-4 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-2xl flex items-center justify-between group hover:shadow-md transition-all">
-                    <div class="flex items-center gap-3">
-                        <span class="text-cyan-600 text-xl">🔄</span>
-                        <div class="text-left">
-                            <p class="text-xs font-bold text-cyan-700 uppercase">Sync Manual</p>
-                            <p class="text-[8px] text-cyan-600">Kirim data tertunda ke cloud</p>
-                        </div>
-                    </div>
-                    <span class="text-cyan-400 group-hover:translate-x-1 transition-transform">→</span>
-                </button>
-
                 <!-- TOMBOL TRIAL -->
                 <button onclick="startTrialMode()" class="w-full p-4 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl flex items-center justify-between group hover:shadow-md transition-all">
                     <div class="flex items-center gap-3">
@@ -548,16 +545,16 @@
                     <span class="text-orange-400 group-hover:translate-x-1 transition-transform">→</span>
                 </button>
                 
-                <!-- TOMBOL BACKUP KE GAS -->
-                <button onclick="backupToGAS()" class="w-full p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex items-center justify-between group hover:shadow-md transition-all">
+                <!-- TOMBOL SYNC SEKARANG -->
+                <button onclick="syncNow()" class="w-full p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl flex items-center justify-between group hover:shadow-md transition-all">
                     <div class="flex items-center gap-3">
-                        <span class="text-blue-600 text-xl">☁️</span>
+                        <span class="text-green-600 text-xl">🔄</span>
                         <div class="text-left">
-                            <p class="text-xs font-bold text-blue-700 uppercase">Backup ke Cloud</p>
-                            <p class="text-[8px] text-blue-600">Simpan permanen di Google Sheets</p>
+                            <p class="text-xs font-bold text-green-700 uppercase">Sync Sekarang</p>
+                            <p class="text-[8px] text-green-600">Kirim data lokal ke cloud</p>
                         </div>
                     </div>
-                    <span class="text-blue-400 group-hover:translate-x-1 transition-transform">→</span>
+                    <span class="text-green-400 group-hover:translate-x-1 transition-transform">→</span>
                 </button>
                 
                 <!-- TOMBOL RESTORE DARI GAS -->
@@ -565,8 +562,8 @@
                     <div class="flex items-center gap-3">
                         <span class="text-purple-600 text-xl">⬇️</span>
                         <div class="text-left">
-                            <p class="text-xs font-bold text-purple-700 uppercase">Restore dari Cloud</p>
-                            <p class="text-[8px] text-purple-600">Ambil data dari Google Sheets</p>
+                            <p class="text-xs font-bold text-purple-700 uppercase">Ambil dari Cloud</p>
+                            <p class="text-[8px] text-purple-600">Restore data dari Google Sheets</p>
                         </div>
                     </div>
                     <span class="text-purple-400 group-hover:translate-x-1 transition-transform">→</span>
@@ -881,6 +878,7 @@
         </div>
     </div>
 
+    <!-- Toast Notification -->
     <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 bg-slate-800/90 backdrop-blur-sm text-white text-[10px] font-bold rounded-full shadow-2xl opacity-0 transition-all z-[100] pointer-events-none border border-white/20">Berhasil</div>
 
     <!-- Audio untuk notifikasi -->
@@ -898,7 +896,7 @@
         
         // ============= KONFIGURASI GOOGLE APPS SCRIPT =============
         // GANTI URL INI DENGAN URL WEB APP ANDA SETELAH DEPLOY
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbyCGtDyqZl8AIY07rY0nfgx3fkllFz4LWUzyAue_fugo8NEsV6SfdyOPaXvzfXZxDnO/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzWonDuaC1YHLZgleOkSVNviNIQO8NGDGHXZQdRel7Y4c3mobVxWEL8uYVw1Ow6VS6ewg/exec';
         
         // ===========================================================
 
@@ -909,15 +907,12 @@
         let lastAbsenData = null;
         let isTrialMode = false;
         let lastSyncTime = null;
-        
-        // Queue untuk sync ke cloud (ANTI LEMOT!)
-        let syncQueue = [];
-        let isSyncing = false;
-        let syncTimer = null;
+        let isOnline = true;
+        let syncQueue = []; // Antrian data yang belum di-sync
 
         // IndexedDB Configuration
         const DB_NAME = 'RockyHijabDB';
-        const DB_VERSION = 1;
+        const DB_VERSION = 2; // Upgrade version untuk menambah sync queue
         let db = null;
         
         // Store names
@@ -926,141 +921,13 @@
             TRANSACTIONS: 'transactions',
             ACTIVITY_LOGS: 'activityLogs',
             USER_DATA: 'userData',
-            TRIAL_USER_DATA: 'trialUserData'
+            TRIAL_USER_DATA: 'trialUserData',
+            SYNC_QUEUE: 'syncQueue' // Store baru untuk antrian sync
         };
-
-        // ============= SISTEM QUEUE ANTI LEMOT =============
-        
-        function addToSyncQueue(data) {
-            syncQueue.push({
-                ...data,
-                id: Date.now() + Math.random(),
-                retry: 0
-            });
-            
-            updateSyncUI();
-            
-            // Jadwalkan sync jika belum ada timer
-            if (!syncTimer) {
-                syncTimer = setTimeout(processSyncQueue, 5000); // Sync setiap 5 detik
-            }
-        }
-        
-        async function processSyncQueue() {
-            if (isSyncing || syncQueue.length === 0 || isTrialMode) {
-                syncTimer = null;
-                return;
-            }
-            
-            isSyncing = true;
-            showSyncStatus('sync-active', `Menyinkronkan ${syncQueue.length} data...`);
-            
-            try {
-                // Ambil batch maksimal 10 data
-                const batch = syncQueue.splice(0, 10);
-                
-                // Kirim batch ke GAS
-                await saveBatchToGAS(batch);
-                
-                updateSyncUI();
-                
-                // Lanjutkan jika masih ada antrian
-                if (syncQueue.length > 0) {
-                    syncTimer = setTimeout(processSyncQueue, 2000);
-                } else {
-                    showSyncStatus('sync-idle', 'Tersinkronisasi');
-                    setTimeout(() => hideSyncStatus(), 3000);
-                    syncTimer = null;
-                }
-            } catch (error) {
-                console.error('Sync error:', error);
-                showSyncStatus('sync-error', 'Gagal sync, akan coba lagi');
-                
-                // Kembalikan batch ke queue untuk dicoba lagi nanti
-                syncQueue.unshift(...batch);
-                
-                // Coba lagi 10 detik kemudian
-                syncTimer = setTimeout(processSyncQueue, 10000);
-            } finally {
-                isSyncing = false;
-            }
-        }
-        
-        async function saveBatchToGAS(batch) {
-            // Kelompokkan berdasarkan action
-            const grouped = {};
-            batch.forEach(item => {
-                if (!grouped[item.action]) grouped[item.action] = [];
-                grouped[item.action].push(item.data);
-            });
-            
-            // Kirim per action
-            for (let action in grouped) {
-                const formData = new URLSearchParams();
-                formData.append('action', action);
-                formData.append('batch', JSON.stringify(grouped[action]));
-                formData.append('deviceInfo', JSON.stringify(getDeviceInfo()));
-                
-                await fetch(GAS_URL, {
-                    method: 'POST',
-                    body: formData,
-                    mode: 'no-cors'
-                });
-            }
-            
-            lastSyncTime = new Date().toLocaleTimeString('id-ID');
-            document.getElementById('cloud-last-sync').innerText = lastSyncTime;
-        }
-        
-        function updateSyncUI() {
-            document.getElementById('sync-queue-count').innerText = syncQueue.length;
-            
-            if (syncQueue.length > 0) {
-                document.getElementById('cloud-connection-status').innerHTML = `
-                    <span class="sync-indicator sync-pending"></span> Pending (${syncQueue.length})
-                `;
-            } else {
-                document.getElementById('cloud-connection-status').innerHTML = `
-                    <span class="sync-indicator sync-active"></span> Online
-                `;
-            }
-        }
-        
-        function showSyncStatus(type, text) {
-            const toast = document.getElementById('sync-toast');
-            const indicator = toast.querySelector('.sync-indicator');
-            const statusText = document.getElementById('sync-status-text');
-            
-            indicator.className = `sync-indicator ${type}`;
-            statusText.innerText = text;
-            
-            toast.classList.replace('opacity-0', 'opacity-100');
-        }
-        
-        function hideSyncStatus() {
-            document.getElementById('sync-toast').classList.replace('opacity-100', 'opacity-0');
-        }
-        
-        // Fungsi untuk sync manual
-        async function manualSync() {
-            if (syncQueue.length === 0) {
-                showToast("✅ Tidak ada data tertunda");
-                return;
-            }
-            
-            showToast(`⏳ Menyinkronkan ${syncQueue.length} data...`);
-            
-            // Proses queue sekarang
-            if (syncTimer) {
-                clearTimeout(syncTimer);
-                syncTimer = null;
-            }
-            
-            await processSyncQueue();
-        }
 
         // ============= FUNGSI UNTUK GOOGLE APPS SCRIPT =============
         
+        // Fungsi untuk mendapatkan info device
         function getDeviceInfo() {
             return {
                 userAgent: navigator.userAgent,
@@ -1071,17 +938,219 @@
             };
         }
 
-        // Fungsi untuk menyimpan data ke GAS via QUEUE (ANTI LEMOT!)
-        function queueToGAS(action, data) {
-            if (isTrialMode) return;
-            
-            addToSyncQueue({ action, data });
+        // Fungsi untuk mengecek koneksi internet
+        function checkConnection() {
+            return navigator.onLine;
         }
 
-        // Fungsi untuk backup ke GAS
-        async function backupToGAS() {
+        // Update status koneksi
+        function updateConnectionStatus() {
+            isOnline = navigator.onLine;
+            const statusEl = document.getElementById('cloud-connection-status');
+            const syncBadge = document.getElementById('sync-badge');
+            const offlineBadge = document.getElementById('offline-badge');
+            
+            if (isOnline) {
+                if (statusEl) {
+                    statusEl.innerHTML = '● Online';
+                    statusEl.className = 'font-bold text-green-600';
+                }
+                if (syncBadge) syncBadge.classList.add('hidden');
+                if (offlineBadge) offlineBadge.classList.add('hidden');
+                
+                // Coba sync jika ada antrian
+                if (syncQueue.length > 0) {
+                    processSyncQueue();
+                }
+            } else {
+                if (statusEl) {
+                    statusEl.innerHTML = '● Offline';
+                    statusEl.className = 'font-bold text-red-600';
+                }
+                if (syncBadge) syncBadge.classList.remove('hidden');
+                if (offlineBadge) offlineBadge.classList.remove('hidden');
+            }
+        }
+
+        // Fungsi untuk menambah ke antrian sync
+        async function addToSyncQueue(action, data) {
+            if (isTrialMode) return;
+            
+            const queueItem = {
+                id: Date.now() + Math.random(),
+                action: action,
+                data: data,
+                timestamp: new Date().toISOString(),
+                retries: 0
+            };
+            
+            syncQueue.push(queueItem);
+            await saveSyncQueue();
+            updateSyncQueueDisplay();
+            
+            // Coba sync jika online
+            if (isOnline) {
+                processSyncQueue();
+            }
+        }
+
+        // Fungsi untuk menyimpan antrian sync ke IndexedDB
+        async function saveSyncQueue() {
+            try {
+                await clearStore(STORES.SYNC_QUEUE);
+                for (const item of syncQueue) {
+                    await addToStore(STORES.SYNC_QUEUE, item);
+                }
+            } catch (error) {
+                console.error('Error saving sync queue:', error);
+            }
+        }
+
+        // Fungsi untuk memuat antrian sync dari IndexedDB
+        async function loadSyncQueue() {
+            try {
+                syncQueue = await getAllFromStore(STORES.SYNC_QUEUE);
+                updateSyncQueueDisplay();
+            } catch (error) {
+                console.error('Error loading sync queue:', error);
+                syncQueue = [];
+            }
+        }
+
+        // Fungsi untuk memproses antrian sync
+        async function processSyncQueue() {
+            if (!isOnline || isTrialMode || syncQueue.length === 0) return;
+            
+            showSyncOverlay(true, 'Menyinkronkan data...', `0/${syncQueue.length}`);
+            
+            let processed = 0;
+            const failed = [];
+            
+            for (const item of syncQueue) {
+                try {
+                    updateSyncStatus(`Menyinkronkan...`, `${processed + 1}/${syncQueue.length}`);
+                    
+                    const result = await sendToGAS(item.action, item.data);
+                    if (result.success) {
+                        processed++;
+                    } else {
+                        item.retries++;
+                        if (item.retries < 3) {
+                            failed.push(item);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Sync error:', error);
+                    item.retries++;
+                    if (item.retries < 3) {
+                        failed.push(item);
+                    }
+                }
+            }
+            
+            syncQueue = failed;
+            await saveSyncQueue();
+            updateSyncQueueDisplay();
+            
+            showSyncOverlay(false);
+            
+            if (processed > 0) {
+                lastSyncTime = new Date().toLocaleTimeString('id-ID');
+                document.getElementById('cloud-last-sync').innerText = lastSyncTime;
+                showToast(`✅ ${processed} data berhasil disinkronkan`);
+            }
+        }
+
+        // Fungsi untuk menampilkan overlay sync
+        function showSyncOverlay(show, status = 'Menyinkronkan...', detail = '') {
+            const overlay = document.getElementById('sync-overlay');
+            const statusEl = document.getElementById('sync-status');
+            const detailEl = document.getElementById('sync-detail');
+            
+            if (show) {
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+                if (statusEl) statusEl.innerText = status;
+                if (detailEl) detailEl.innerText = detail;
+            } else {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+
+        function updateSyncStatus(status, detail) {
+            const statusEl = document.getElementById('sync-status');
+            const detailEl = document.getElementById('sync-detail');
+            if (statusEl) statusEl.innerText = status;
+            if (detailEl) detailEl.innerText = detail;
+        }
+
+        function updateSyncQueueDisplay() {
+            const queueEl = document.getElementById('sync-queue');
+            if (queueEl) {
+                queueEl.innerText = syncQueue.length;
+            }
+        }
+
+        // Fungsi untuk mengirim ke GAS (tanpa menunggu response)
+        async function sendToGAS(action, data) {
+            try {
+                const formData = new URLSearchParams();
+                formData.append('action', action);
+                
+                for (let key in data) {
+                    if (data[key] !== undefined && data[key] !== null) {
+                        formData.append(key, String(data[key]));
+                    }
+                }
+                
+                formData.append('deviceInfo', JSON.stringify(getDeviceInfo()));
+                
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: formData,
+                    mode: 'no-cors' // Untuk menghindari CORS issues
+                });
+                
+                return { success: true };
+            } catch (error) {
+                console.error('GAS Error:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        // Fungsi untuk mendapatkan data dari GAS
+        async function getFromGAS(action, params = {}) {
+            if (isTrialMode) return { success: true, data: null, message: 'Trial mode' };
+            
+            try {
+                const url = new URL(GAS_URL);
+                url.searchParams.append('action', action);
+                
+                for (let key in params) {
+                    url.searchParams.append(key, params[key]);
+                }
+                
+                const response = await fetch(url.toString(), {
+                    mode: 'no-cors' // Untuk menghindari CORS issues
+                });
+                
+                return { success: true, data: null }; // no-cors tidak bisa baca response
+            } catch (error) {
+                console.error('GAS Error:', error);
+                return { success: false, message: error.message };
+            }
+        }
+
+        // Fungsi untuk sync semua data
+        async function syncNow() {
             if (isTrialMode) {
-                showToast("❌ Mode trial tidak bisa backup ke cloud");
+                showToast("❌ Mode trial tidak bisa sync ke cloud");
+                return;
+            }
+            
+            if (!isOnline) {
+                showToast("❌ Tidak ada koneksi internet");
                 return;
             }
             
@@ -1092,15 +1161,23 @@
                 const transactions = await getAllFromStore(STORES.TRANSACTIONS);
                 const activityLogs = await getAllFromStore(STORES.ACTIVITY_LOGS);
                 
-                // Kirim ke GAS via queue (langsung, tanpa nunggu)
-                queueToGAS('saveUser', {
+                showSyncOverlay(true, 'Menyinkronkan dengan cloud...', `0/${attendance.length + transactions.length + activityLogs.length + 1}`);
+                
+                // Sync user data
+                updateSyncStatus('Menyinkronkan data user...', `1/${attendance.length + transactions.length + activityLogs.length + 1}`);
+                await sendToGAS('saveUser', {
                     nama: userData.name,
                     domisili: userData.domicile,
                     wa: userData.wa
                 });
                 
+                let processed = 1;
+                
+                // Sync attendance
                 for (const item of attendance) {
-                    queueToGAS('saveAttendance', {
+                    processed++;
+                    updateSyncStatus('Menyinkronkan absensi...', `${processed}/${attendance.length + transactions.length + activityLogs.length + 1}`);
+                    await sendToGAS('saveAttendance', {
                         id: item.id,
                         nama: userData.name,
                         type: item.type,
@@ -1112,8 +1189,11 @@
                     });
                 }
                 
+                // Sync transactions
                 for (const item of transactions) {
-                    queueToGAS('saveTransaction', {
+                    processed++;
+                    updateSyncStatus('Menyinkronkan transaksi...', `${processed}/${attendance.length + transactions.length + activityLogs.length + 1}`);
+                    await sendToGAS('saveTransaction', {
                         id: item.id,
                         nama: userData.name,
                         date: item.date,
@@ -1124,8 +1204,11 @@
                     });
                 }
                 
+                // Sync activity logs
                 for (const item of activityLogs) {
-                    queueToGAS('saveActivityLog', {
+                    processed++;
+                    updateSyncStatus('Menyinkronkan log aktivitas...', `${processed}/${attendance.length + transactions.length + activityLogs.length + 1}`);
+                    await sendToGAS('saveActivityLog', {
                         id: item.id,
                         nama: userData.name,
                         action: item.action,
@@ -1135,18 +1218,17 @@
                     });
                 }
                 
-                showToast("✅ Data masuk antrian backup!");
-                await saveActivityLog('Backup Cloud', `Backup ${attendance.length + transactions.length} data ke cloud`);
-                closeModal('modal-menu');
+                showSyncOverlay(false);
+                lastSyncTime = new Date().toLocaleTimeString('id-ID');
+                document.getElementById('cloud-last-sync').innerText = lastSyncTime;
                 
-                // Proses sync lebih cepat
-                if (syncTimer) {
-                    clearTimeout(syncTimer);
-                    syncTimer = setTimeout(processSyncQueue, 1000);
-                }
+                showToast("✅ Sinkronisasi berhasil!");
+                await saveActivityLog('Sync Cloud', `Sinkronisasi ${attendance.length + transactions.length + activityLogs.length} data ke cloud`);
+                closeModal('modal-menu');
             } catch (error) {
-                console.error('Backup GAS error:', error);
-                showToast("❌ Gagal backup ke cloud");
+                console.error('Sync error:', error);
+                showToast("❌ Gagal sinkronisasi");
+                showSyncOverlay(false);
             } finally {
                 hideLoading();
             }
@@ -1159,12 +1241,30 @@
                 return;
             }
             
-            showToast("⚠️ Fitur restore otomatis terbatas. Gunakan Backup via WA.");
-            closeModal('modal-menu');
+            if (!confirm("Restore dari cloud akan menimpa data lokal. Lanjutkan?")) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                // Karena no-cors, kita akan pakai metode manual
+                showToast("⚠️ Fitur restore otomatis terbatas. Gunakan Backup via WA untuk restore.");
+                
+                // Tampilkan petunjuk
+                alert("Untuk restore data dari cloud:\n\n1. Buka Google Sheets\n2. Copy data yang diperlukan\n3. Gunakan fitur 'Restore dari WA' dengan menempel data");
+                
+                closeModal('modal-menu');
+            } catch (error) {
+                console.error('Restore GAS error:', error);
+                showToast("❌ Gagal restore dari cloud");
+            } finally {
+                hideLoading();
+            }
         }
 
         // ============= FUNGSI INDEXEDDB =============
         
+        // Loading indicator
         function showLoading() {
             document.getElementById('loading-overlay').classList.remove('hidden');
         }
@@ -1173,6 +1273,7 @@
             document.getElementById('loading-overlay').classList.add('hidden');
         }
 
+        // Initialize IndexedDB
         function initDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -1225,6 +1326,11 @@
                     
                     if (!db.objectStoreNames.contains(STORES.TRIAL_USER_DATA)) {
                         const trialStore = db.createObjectStore(STORES.TRIAL_USER_DATA, { keyPath: 'sessionId' });
+                    }
+                    
+                    if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
+                        const queueStore = db.createObjectStore(STORES.SYNC_QUEUE, { keyPath: 'id' });
+                        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
                     }
                     
                     console.log('Database schema upgraded');
@@ -1312,7 +1418,7 @@
             });
         }
 
-        // Storage functions with QUEUE for cloud sync
+        // Storage functions dengan auto-sync ke cloud
         async function getStorage(key, defaultValue = "[]") {
             try {
                 if (isTrialMode) {
@@ -1380,7 +1486,6 @@
         async function setStorage(key, value) {
             try {
                 if (isTrialMode) {
-                    // TRIAL MODE - hanya simpan lokal
                     if (key === 'rocky_history') {
                         const items = JSON.parse(value);
                         const sessionId = sessionStorage.getItem('rocky_session_id') || 'default';
@@ -1430,15 +1535,14 @@
                         sessionStorage.setItem(key, value);
                     }
                 } else {
-                    // MODE NORMAL - simpan di IndexedDB dan QUEUE ke cloud
                     if (key === 'rocky_history') {
                         const items = JSON.parse(value);
                         await clearStore(STORES.ATTENDANCE);
                         for (const item of items) {
                             await addToStore(STORES.ATTENDANCE, item);
                             
-                            // QUEUE ke cloud (ANTI LEMOT!)
-                            queueToGAS('saveAttendance', {
+                            // Tambahkan ke antrian sync
+                            await addToSyncQueue('saveAttendance', {
                                 id: item.id,
                                 nama: userData.name,
                                 type: item.type,
@@ -1454,8 +1558,8 @@
                         for (const item of items) {
                             await addToStore(STORES.TRANSACTIONS, item);
                             
-                            // QUEUE ke cloud (ANTI LEMOT!)
-                            queueToGAS('saveTransaction', {
+                            // Tambahkan ke antrian sync
+                            await addToSyncQueue('saveTransaction', {
                                 id: item.id,
                                 nama: userData.name,
                                 date: item.date,
@@ -1471,8 +1575,8 @@
                         for (const item of items) {
                             await addToStore(STORES.ACTIVITY_LOGS, item);
                             
-                            // QUEUE ke cloud (ANTI LEMOT!)
-                            queueToGAS('saveActivityLog', {
+                            // Tambahkan ke antrian sync
+                            await addToSyncQueue('saveActivityLog', {
                                 id: item.id,
                                 nama: userData.name,
                                 action: item.action,
@@ -1490,8 +1594,8 @@
                             if (key === 'rocky_user_wa') user.wa = value;
                             await putInStore(STORES.USER_DATA, user);
                             
-                            // QUEUE ke cloud (ANTI LEMOT!)
-                            queueToGAS('saveUser', {
+                            // Tambahkan ke antrian sync
+                            await addToSyncQueue('saveUser', {
                                 nama: user.name,
                                 domisili: user.domicile,
                                 wa: user.wa
@@ -1503,8 +1607,8 @@
                             if (key === 'rocky_user_wa') user.wa = value;
                             await addToStore(STORES.USER_DATA, user);
                             
-                            // QUEUE ke cloud (ANTI LEMOT!)
-                            queueToGAS('saveUser', {
+                            // Tambahkan ke antrian sync
+                            await addToSyncQueue('saveUser', {
                                 nama: user.name,
                                 domisili: user.domicile,
                                 wa: user.wa
@@ -1656,9 +1760,6 @@
                 checkTodayAbsen();
                 updateTransactionAccess();
                 updateDataStats();
-                
-                // Update sync UI
-                updateSyncUI();
             } finally {
                 hideLoading();
             }
@@ -1732,6 +1833,7 @@
                 else if (log.action === 'Sistem') { bgColor = "bg-blue-50"; icon = "⚙️"; }
                 else if (log.action === 'Backup') { bgColor = "bg-emerald-50"; icon = "📤"; }
                 else if (log.action === 'Backup Cloud') { bgColor = "bg-blue-50"; icon = "☁️"; }
+                else if (log.action === 'Sync Cloud') { bgColor = "bg-green-50"; icon = "🔄"; }
                 
                 return `
                     <div class="flex items-center gap-2 p-2 ${bgColor} rounded-xl border border-indigo-100/30">
@@ -2076,13 +2178,6 @@
                         userData = { name: n, domicile: d, wa: w };
                     }
                     
-                    // QUEUE ke cloud (ANTI LEMOT!)
-                    queueToGAS('saveUser', {
-                        nama: userData.name,
-                        domisili: userData.domicile,
-                        wa: userData.wa
-                    });
-                    
                     await initApp();
                 }
             } finally {
@@ -2231,8 +2326,8 @@
                 for (const item of data.a) {
                     await addToStore(STORES.ATTENDANCE, item);
                     
-                    // QUEUE ke cloud (ANTI LEMOT!)
-                    queueToGAS('saveAttendance', {
+                    // Tambahkan ke antrian sync
+                    await addToSyncQueue('saveAttendance', {
                         id: item.id,
                         nama: userData.name,
                         type: item.type,
@@ -2247,8 +2342,8 @@
                 for (const item of data.t) {
                     await addToStore(STORES.TRANSACTIONS, item);
                     
-                    // QUEUE ke cloud (ANTI LEMOT!)
-                    queueToGAS('saveTransaction', {
+                    // Tambahkan ke antrian sync
+                    await addToSyncQueue('saveTransaction', {
                         id: item.id,
                         nama: userData.name,
                         date: item.date,
@@ -2264,8 +2359,8 @@
                     for (const item of data.l) {
                         await addToStore(STORES.ACTIVITY_LOGS, item);
                         
-                        // QUEUE ke cloud (ANTI LEMOT!)
-                        queueToGAS('saveActivityLog', {
+                        // Tambahkan ke antrian sync
+                        await addToSyncQueue('saveActivityLog', {
                             id: item.id,
                             nama: userData.name,
                             action: item.action,
@@ -2279,8 +2374,8 @@
                 await setStorage('rocky_user_dom', userData.domicile);
                 await setStorage('rocky_user_wa', data.w || userData.wa);
                 
-                // QUEUE ke cloud
-                queueToGAS('saveUser', {
+                // Tambahkan user ke antrian sync
+                await addToSyncQueue('saveUser', {
                     nama: userData.name,
                     domisili: userData.domicile,
                     wa: userData.wa
@@ -2293,7 +2388,8 @@
                 await renderHistory();
                 await renderActivityLog();
                 
-                showToast("✅ Restore berhasil! Data masuk antrian sync.");
+                showToast("✅ Restore berhasil! Data akan di-sync ke cloud.");
+                setTimeout(() => location.reload(), 1500);
                 
                 await saveActivityLog('Restore', `Restore data dari backup (${data.t.length + data.a.length} entri)`);
             } catch (e) {
@@ -2357,8 +2453,8 @@
                     for (const item of data.history) {
                         await addToStore(STORES.ATTENDANCE, item);
                         
-                        // QUEUE ke cloud
-                        queueToGAS('saveAttendance', {
+                        // Tambahkan ke antrian sync
+                        await addToSyncQueue('saveAttendance', {
                             id: item.id,
                             nama: userData.name,
                             type: item.type,
@@ -2375,8 +2471,8 @@
                     for (const item of data.tx_history) {
                         await addToStore(STORES.TRANSACTIONS, item);
                         
-                        // QUEUE ke cloud
-                        queueToGAS('saveTransaction', {
+                        // Tambahkan ke antrian sync
+                        await addToSyncQueue('saveTransaction', {
                             id: item.id,
                             nama: userData.name,
                             date: item.date,
@@ -2393,8 +2489,8 @@
                     for (const item of data.activity_logs) {
                         await addToStore(STORES.ACTIVITY_LOGS, item);
                         
-                        // QUEUE ke cloud
-                        queueToGAS('saveActivityLog', {
+                        // Tambahkan ke antrian sync
+                        await addToSyncQueue('saveActivityLog', {
                             id: item.id,
                             nama: userData.name,
                             action: item.action,
@@ -2405,14 +2501,14 @@
                     }
                 }
                 
-                // QUEUE ke cloud
-                queueToGAS('saveUser', {
+                // Tambahkan user ke antrian sync
+                await addToSyncQueue('saveUser', {
                     nama: userData.name,
                     domisili: userData.domicile,
                     wa: userData.wa
                 });
                 
-                showToast("✅ Berhasil! Data masuk antrian sync.");
+                showToast("✅ Berhasil! Data akan di-sync ke cloud.");
                 setTimeout(() => location.reload(), 1500);
             } catch (e) { 
                 console.error(e);
@@ -2487,6 +2583,7 @@
                 await clearStore(STORES.ACTIVITY_LOGS);
                 await clearStore(STORES.USER_DATA);
                 await clearStore(STORES.TRIAL_USER_DATA);
+                await clearStore(STORES.SYNC_QUEUE);
                 
                 await removeStorage('rocky_last_absen');
                 await removeStorage('rocky_last_reset_date');
@@ -2494,6 +2591,7 @@
                 await removeStorage('rocky_last_log_clean_year');
                 await removeStorage('rocky_last_auto_clean');
                 
+                syncQueue = [];
                 cart = [];
                 lastAbsenData = null;
                 
@@ -2572,13 +2670,6 @@
             
             await setStorage('rocky_user_dom', newDomicile);
             await setStorage('rocky_user_wa', newWA);
-            
-            // QUEUE ke cloud
-            queueToGAS('saveUser', {
-                nama: userData.name,
-                domisili: userData.domicile,
-                wa: userData.wa
-            });
             
             document.getElementById('user-display-domicile').innerHTML = `<span class="w-1 h-1 bg-indigo-400 rounded-full"></span> ${newDomicile}`;
             document.getElementById('user-display-wa').innerHTML = `<span>📱</span> ${newWA}`;
@@ -2785,6 +2876,14 @@
                 
                 isiPilihanTahun();
                 
+                // Load sync queue
+                await loadSyncQueue();
+                
+                // Setup connection listeners
+                window.addEventListener('online', updateConnectionStatus);
+                window.addEventListener('offline', updateConnectionStatus);
+                updateConnectionStatus();
+                
                 // Cek apakah sudah pernah daftar (staf)
                 const savedName = await getStorage('rocky_user_name');
                 
@@ -2824,6 +2923,13 @@
                 setInterval(async () => {
                     await checkAndResetDailyData();
                 }, 30000);
+                
+                // Coba sync setiap 5 menit jika ada antrian
+                setInterval(() => {
+                    if (isOnline && syncQueue.length > 0) {
+                        processSyncQueue();
+                    }
+                }, 5 * 60 * 1000);
                 
                 document.addEventListener('visibilitychange', async () => {
                     if (!document.hidden) {
